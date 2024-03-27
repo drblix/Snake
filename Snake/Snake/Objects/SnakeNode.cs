@@ -24,14 +24,19 @@ namespace Snake.Objects
         /// <summary>
         /// Shifts the specified node in the provided direction
         /// </summary>
-        public void Shift(SnakeObject.Direction direction)
+        public void Shift(SnakeObject.Direction direction) => _position = FuturePosition(direction);
+
+        /// <summary>
+        /// Returns the future position of this node if the provided direction were to be applied
+        /// </summary>
+        public Point FuturePosition(SnakeObject.Direction direction)
         {
-            _position += direction switch
+            return direction switch
             {
-                SnakeObject.Direction.Up => new Point(0, -_cellSize),
-                SnakeObject.Direction.Down => new Point(0, _cellSize),
-                SnakeObject.Direction.Left => new Point(-_cellSize, 0),
-                SnakeObject.Direction.Right => new Point(_cellSize, 0),
+                SnakeObject.Direction.Up => _position + new Point(0, -_cellSize),
+                SnakeObject.Direction.Down => _position + new Point(0, _cellSize),
+                SnakeObject.Direction.Left => _position + new Point(-_cellSize, 0),
+                SnakeObject.Direction.Right => _position + new Point(_cellSize, 0),
                 _ => throw new System.Exception("this should never happen, and if it does, my life is a lie"),
             };
         }

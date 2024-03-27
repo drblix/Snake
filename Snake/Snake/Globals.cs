@@ -29,5 +29,7 @@ namespace Snake
 
             _random = new();
         }
+
+        public static T Load<T>(string fileName) where T : class => _contentManager.Load<T>(fileName);
     }
 }

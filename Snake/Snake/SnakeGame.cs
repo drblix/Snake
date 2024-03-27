@@ -14,6 +14,7 @@ namespace Snake
 
         private readonly GraphicsDeviceManager _graphics;
         private SpriteBatch _spriteBatch;
+        private SpriteFont _scoreText;
         
         private SnakeObject _snake;
 
@@ -29,8 +30,6 @@ namespace Snake
 
         protected override void Initialize()
         {
-            // TODO: Add your initialization logic here
-
             // grid settings
             const int GRID_WIDTH = 48;
             const int GRID_HEIGHT = 36;
@@ -40,13 +39,15 @@ namespace Snake
             Viewport newViewport = new(0, 0, GRID_WIDTH * CELL_SIZE, GRID_HEIGHT * CELL_SIZE);
             GraphicsDevice.Viewport = newViewport;
 
+            // adjusts size of window
             _graphics.PreferredBackBufferWidth = GRID_WIDTH * CELL_SIZE;
             _graphics.PreferredBackBufferHeight = GRID_HEIGHT * CELL_SIZE;
             _graphics.ApplyChanges();
 
+            // creates new snake and links event
             CreateSnake(newViewport, .15f, Color.Lime, CELL_SIZE);
             _snake.OnDeath += Snake_OnDeath;
-
+            
             base.Initialize();
         }
 
@@ -60,6 +61,8 @@ namespace Snake
         protected override void LoadContent()
         {
             _spriteBatch = new SpriteBatch(GraphicsDevice);
+            _scoreText = Content.Load<SpriteFont>("Text");
+
             Globals.Init(_spriteBatch, Content);
         }
 
@@ -84,6 +87,7 @@ namespace Snake
             // draw snake every frame
             _spriteBatch.Begin();
             _snake.Draw();
+            _spriteBatch.DrawString(_scoreText, _snake.Score.ToString(), new Vector2(_graphics.PreferredBackBufferWidth / 2, _graphics.PreferredBackBufferHeight * .015f), Color.White);
             _spriteBatch.End();
 
             base.Draw(gameTime);

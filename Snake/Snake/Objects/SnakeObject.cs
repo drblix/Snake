@@ -1,6 +1,8 @@
 ﻿using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using Microsoft.Xna.Framework.Media;
 using Snake.Coroutines;
 using System;
 using System.Collections.Generic;
@@ -22,6 +24,7 @@ namespace Snake.Objects
             Right
         }
 
+        public int Score => _score;
         public int Length => _body.Count;
 
         private readonly LinkedList<SnakeNode> _body = new();
@@ -30,11 +33,16 @@ namespace Snake.Objects
         private readonly float _moveDelay;
         private readonly float _fillOfCell;
         private readonly Viewport _viewport;
+        private readonly SoundEffect _eatSound;
 
         private Apple _apple;
         private Color _colour;
         private Color _headColour;
+
         private Direction _direction;
+        private Direction _desiredDirection;
+
+        private int _score = 0;
         private float _moveTimer = 0f;
         private bool _alive = true;
 
@@ -70,8 +78,8 @@ namespace Snake.Objects
                 for (int i = 0; i < startingSize; i++)
                     _body.AddLast(new SnakeNode(_body.Last.Value.Position, _cellSize));
 
-            _apple = new(Color.Red, _cellSize);
-            _apple.GotoNewPosition(this, _viewport);
+            _apple = new(this, viewport, Color.Red, _cellSize);
+            _eatSound = Globals.Load<SoundEffect>("eat");
         }
 
         /// <summary>
@@ -83,22 +91,23 @@ namespace Snake.Objects
             if (!_alive) return;
 
             if (_direction != Direction.Down && (Keyboard.GetState().IsKeyDown(Keys.Up) || Keyboard.GetState().IsKeyDown(Keys.W)))
-                _direction = Direction.Up;
+                _desiredDirection = Direction.Up;
             else if (_direction != Direction.Up && (Keyboard.GetState().IsKeyDown(Keys.Down) || Keyboard.GetState().IsKeyDown(Keys.S)))
-                _direction = Direction.Down;
+                _desiredDirection = Direction.Down;
             else if (_direction != Direction.Right && (Keyboard.GetState().IsKeyDown(Keys.Left) || Keyboard.GetState().IsKeyDown(Keys.A)))
-                _direction = Direction.Left;
+                _desiredDirection = Direction.Left;
             else if (_direction != Direction.Left && (Keyboard.GetState().IsKeyDown(Keys.Right) || Keyboard.GetState().IsKeyDown(Keys.D)))
-                _direction = Direction.Right;
+                _desiredDirection = Direction.Right;
 
 
             _moveTimer += Time.DeltaTime;
             if (_moveTimer > _moveDelay)
             {
+                _direction = _desiredDirection;
                 _moveTimer = 0f;
                 Move();
 
-                if (IsGameOver())
+                if (IsGameOver(_body.First.Value.Position))
                 {
                     _alive = false;
                     _apple = null;
@@ -106,10 +115,12 @@ namespace Snake.Objects
                     return;
                 }
 
-                if (_apple.Position == _body.First.Value.Position)
+                if (_apple?.Position == _body.First.Value.Position)
                 {
-                    Grow();
-                    _apple.GotoNewPosition(this, _viewport);
+                    Grow(_apple.Substance);
+                    _apple = new(this, _viewport, Color.Red, _cellSize);
+                    _score++;
+                    _eatSound.Play();
                 }
             }   
         }
@@ -135,8 +146,8 @@ namespace Snake.Objects
 
                 node = node.Next;
             } while (node != null);
-
-            _apple.Draw();
+            
+            _apple?.Draw();
         }
 
         /// <summary>
@@ -152,8 +163,19 @@ namespace Snake.Objects
                 _body.AddLast(new SnakeNode(_body.Last.Value.Position, _cellSize));
         }
 
+        /// <summary>
+        /// Moves the snake in the current direction
+        /// </summary>
         private void Move()
         {
+            if (IsGameOver(_body.First.Value.FuturePosition(_direction)))
+            {
+                _alive = false;
+                _apple = null;
+                CoroutineManager.CreateCoroutine(GameOverRoutine());
+                return;
+            }
+
             // just shift head if no other nodes in body
             if (_body.Count <= 1)
             {
@@ -176,15 +198,15 @@ namespace Snake.Objects
 
 
         /// <summary>
-        /// Checks if the head of the snake has collided either with itself or the boundary of the screen
+        /// Checks if the provided point has collided either with itself or the boundary of the screen
         /// </summary>
-        private bool IsGameOver() => IsOccupiedBySnake(_body.First.Value.Position) || IsOutOfBounds(_body.First.Value.Position);
+        private bool IsGameOver(Point point) => IsOccupiedBySnake(point) || IsOutOfBounds(point);
 
         /// <summary>
         /// Checks if the specified point falls outside of the boundaries of the screen
         /// </summary>
         /// <param name="point">Point to check</param>
-        private bool IsOutOfBounds(Point point) => point.X < 0 || point.Y < 0 || point.X > _viewport.Width || point.Y > _viewport.Height;
+        private bool IsOutOfBounds(Point point) => point.X < 0 || point.Y < 0 || point.X > _viewport.Width - _cellSize || point.Y > _viewport.Height - _cellSize;
 
         /// <summary>
         /// Checks if the specified point is occupied by the body of the snake (does NOT include the head)
@@ -210,14 +232,15 @@ namespace Snake.Objects
 
         private IEnumerator<YieldInstruction> GameOverRoutine()
         {
-            yield return new WaitForSeconds(1.5f);
-            for (int i = 0; i < 5; i++)
+            yield return new WaitForSeconds(.85f);
+            for (int i = 0; i < 4; i++)
             {
                 _colour = Color.Red;
                 _headColour = Color.Red;
-                yield return new WaitForSeconds(.45f);
+                yield return new WaitForSeconds(.2f);
                 _colour = Color.Lime;
                 _headColour = Color.Lime;
+                yield return new WaitForSeconds(.2f);
             }
 
             OnDeath?.Invoke();
