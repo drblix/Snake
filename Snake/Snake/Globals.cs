@@ -1,5 +1,6 @@
 ﻿using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
+using System;
 
 namespace Snake
 {
@@ -16,12 +17,17 @@ namespace Snake
 
         private static Texture2D _pixelTexture;
 
+        public static Random Random => _random;
+
         private static ContentManager _contentManager;
+        private static Random _random;
 
         public static void Init(SpriteBatch spriteBatch, ContentManager contentManager)
         {
             _spriteBatch = spriteBatch;
             _contentManager = contentManager;
+
+            _random = new();
         }
     }
 }

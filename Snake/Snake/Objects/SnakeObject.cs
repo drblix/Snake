@@ -1,12 +1,19 @@
 ﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using Snake.Coroutines;
+using System;
 using System.Collections.Generic;
 
 namespace Snake.Objects
 {
     public class SnakeObject : Interfaces.IUpdateable, Interfaces.IDrawable
     {
+        public event Action OnDeath;
+
+        /// <summary>
+        /// Represents directions in which the snake can move
+        /// </summary>
         public enum Direction
         {
             Up,
@@ -15,28 +22,66 @@ namespace Snake.Objects
             Right
         }
 
+        public int Length => _body.Count;
+
         private readonly LinkedList<SnakeNode> _body = new();
 
-        private readonly int _size;
+        private readonly int _cellSize;
         private readonly float _moveDelay;
-        private readonly Color _color;
+        private readonly float _fillOfCell;
+        private readonly Viewport _viewport;
 
+        private Apple _apple;
+        private Color _colour;
+        private Color _headColour;
         private Direction _direction;
         private float _moveTimer = 0f;
+        private bool _alive = true;
 
 
-        public SnakeObject(Point start, float moveDelay, Color color, int size)
+        /// <summary>
+        /// Creates a new snake object
+        /// </summary>
+        /// <param name="viewport">The current viewport being used by the game</param>
+        /// <param name="start">The position where the snake starts</param>
+        /// <param name="moveDelay">The delay (in seconds) between the snake moving</param>
+        /// <param name="snakeColour">The snakeColour at which the snake is to be rendered</param>
+        /// <param name="cellSize">The size (in pixels) of each snake segment</param>
+        /// <param name="startingSize">The number of nodes the snake should start with (not including the head)</param>
+        /// <param name="fillOfCell">The percent [0.05, 1] of the cell that should be filled when rendering each snake node</param>
+        /// <param name="headColour">The colour at which the snake head should be rendered relative to the rest of the body</param>
+        public SnakeObject(Viewport viewport, Point start, float moveDelay, Color snakeColour, int cellSize, int startingSize = 0, float fillOfCell = .85f, Color? headColour = null)
         {
+            _viewport = viewport;
             _moveDelay = moveDelay;
-            _color = color;
-            _size = size;
+            _colour = snakeColour;
+            _cellSize = cellSize;
+            _fillOfCell = MathHelper.Clamp(fillOfCell, 0.05f, 1f);
+
+            if (headColour == null)
+                _headColour = snakeColour;
+            else
+                _headColour = headColour.Value;
 
             // creating head
-            _body.AddFirst(new SnakeNode(start, size));
+            _body.AddFirst(new SnakeNode(start, _cellSize));
+
+            if (startingSize > 0)
+                for (int i = 0; i < startingSize; i++)
+                    _body.AddLast(new SnakeNode(_body.Last.Value.Position, _cellSize));
+
+            _apple = new(Color.Red, _cellSize);
+            _apple.GotoNewPosition(this, _viewport);
         }
 
+        /// <summary>
+        /// Updates the snake object every frame<br><br></br></br>
+        /// Changes direction depending on keystrokes during this update cycle
+        /// </summary>
         public void Update()
         {
+            if (!_alive) return;
+
             if (_direction != Direction.Down && (Keyboard.GetState().IsKeyDown(Keys.Up) || Keyboard.GetState().IsKeyDown(Keys.W)))
                 _direction = Direction.Up;
             else if (_direction != Direction.Up && (Keyboard.GetState().IsKeyDown(Keys.Down) || Keyboard.GetState().IsKeyDown(Keys.S)))
@@ -46,19 +91,32 @@ namespace Snake.Objects
             else if (_direction != Direction.Left && (Keyboard.GetState().IsKeyDown(Keys.Right) || Keyboard.GetState().IsKeyDown(Keys.D)))
                 _direction = Direction.Right;
 
-            if (Keyboard.GetState().IsKeyDown(Keys.Space))
-                Grow();
 
             _moveTimer += Time.DeltaTime;
             if (_moveTimer > _moveDelay)
             {
                 _moveTimer = 0f;
                 Move();
-            }
+
+                if (IsGameOver())
+                {
+                    _alive = false;
+                    _apple = null;
+                    CoroutineManager.CreateCoroutine(GameOverRoutine());
+                    return;
+                }
+
+                if (_apple.Position == _body.First.Value.Position)
+                {
+                    Grow();
+                    _apple.GotoNewPosition(this, _viewport);
+                }
+            }   
         }
 
         public void Draw()
         {
+            // iterates through each node in the linked list, rendering each node
             LinkedListNode<SnakeNode> node = _body.First;
 
             do
@@ -67,57 +125,43 @@ namespace Snake.Objects
                     Globals.PixelTexture,
                     node.Value.Position.ToVector2(),
                     null,
-                    _color,
+                    node == _body.First ? _headColour : _colour,
                     0f,
                     Vector2.Zero,
-                    _size * .85f,
+                    _cellSize * _fillOfCell,
                     SpriteEffects.None,
                     0f
                 );
 
                 node = node.Next;
             } while (node != null);
+
+            _apple.Draw();
         }
 
-        private void Grow()
+        /// <summary>
+        /// Grows the snake
+        /// </summary>
+        /// <param name="amount">Amount of nodes to add onto the snake</param>
+        private void Grow(int amount = 1)
         {
-            /*
-            Point lastPosition = _body.Last.Value.Position;
+            // minimum value must be >= 1
+            amount = MathHelper.Max(amount, 1);
 
-            // can we grow to the right?
-            Point newPosition = lastPosition + new Point(_size, 0);
-            if (!IsOccupied(newPosition))
-            // check if position is occupied by another node
-
-            // can we grow to the left?
-            newPosition = lastPosition + new Point(-_size, 0);
-            // check if position is occupied by another node
-
-            // can we grow above?
-            newPosition = lastPosition + new Point(0, -_size);
-            // check if position is occupied by another node
-
-            // can we grow below?
-            newPosition = lastPosition + new Point(0, _size);
-            // check if position is occupied by another node
-
-            _body.AddLast(new SnakeNode(newPosition, _size));
-            */
-
-            _body.AddLast(new SnakeNode(_body.Last.Value.Position + new Point(_size, 0), _size));
+            for (int i = 0; i < amount; i++)
+                _body.AddLast(new SnakeNode(_body.Last.Value.Position, _cellSize));
         }
 
         private void Move()
         {
+            // just shift head if no other nodes in body
             if (_body.Count <= 1)
             {
                 _body.First.Value.Shift(_direction);
                 return;
             }
 
-
             // shift every other node to previous node's position
-            Point lastPos = _body.Last.Value.Position;
             LinkedListNode<SnakeNode> node = _body.Last.Previous;
 
             while (node != null)
@@ -126,28 +170,35 @@ namespace Snake.Objects
                 node = node.Previous;
             }
 
-            _body.First.Value.Position = lastPos;
+            // shifts head to new position relative to direction
             _body.First.Value.Shift(_direction);
-
-            /*
-            LinkedListNode<SnakeNode> node = _body.First;
-            
-            node = node.Next;
-            while (node != null)
-            {
-                node.Value.Position = node.Previous.Value.Position;
-
-                node = node.Next;
-            }
-
-            _body.First.Value.Shift(_direction);
-            */
         }
 
-        private bool IsOccupied(Point point)
-        {
-            LinkedListNode<SnakeNode> node = _body.First;
 
+        /// <summary>
+        /// Checks if the head of the snake has collided either with itself or the boundary of the screen
+        /// </summary>
+        private bool IsGameOver() => IsOccupiedBySnake(_body.First.Value.Position) || IsOutOfBounds(_body.First.Value.Position);
+
+        /// <summary>
+        /// Checks if the specified point falls outside of the boundaries of the screen
+        /// </summary>
+        /// <param name="point">Point to check</param>
+        private bool IsOutOfBounds(Point point) => point.X < 0 || point.Y < 0 || point.X > _viewport.Width || point.Y > _viewport.Height;
+
+        /// <summary>
+        /// Checks if the specified point is occupied by the body of the snake (does NOT include the head)
+        /// </summary>
+        /// <param name="point">Point to check</param>
+        public bool IsOccupiedBySnake(Point point)
+        {
+            // cannot collide with head
+            if (_body.Count <= 1) return false;
+
+            // node after head
+            LinkedListNode<SnakeNode> node = _body.First.Next;
+
+            // check each node's position to see if it occupies the provided point
             do
             {
                 if (node.Value.Position == point) return true;
@@ -155,6 +206,21 @@ namespace Snake.Objects
             } while (node != null);
 
             return false;
+        }
+
+        private IEnumerator<YieldInstruction> GameOverRoutine()
+        {
+            yield return new WaitForSeconds(1.5f);
+            for (int i = 0; i < 5; i++)
+            {
+                _colour = Color.Red;
+                _headColour = Color.Red;
+                yield return new WaitForSeconds(.45f);
+                _colour = Color.Lime;
+                _headColour = Color.Lime;
+            }
+
+            OnDeath?.Invoke();
         }
     }
 }
